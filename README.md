@@ -86,28 +86,18 @@ El módulo [`src/training/rfdetr_finetuner.py`](src/training/rfdetr_finetuner.py
 
 Para utilizarlo, se debe instanciar con el modelo RF-DETR adaptado, *dataloaders* de entrenamiento y validación, optimizador y *scheduler*. Posteriormente, llamar a `train()` ejecutará el fine-tuning completo y devolverá el historial de métricas recopiladas.
 
-## Inferencia de video y generación de datasets
+## Entrenamiento automatizado con Roboflow y RF-DETR
 
-El módulo [`src/inference/video_inference.py`](src/inference/video_inference.py) permite convertir la salida frame a frame del detector RF-DETR en un dataset estructurado:
+El script [`src/inference/video_inference.py`](src/inference/video_inference.py) ahora documenta un flujo completo para descargar un dataset desde Roboflow, entrenar RF-DETR y exportar el modelo resultante:
 
-- `VideoInference` carga un checkpoint fine-tuneado (aprovechando los metadatos de clases guardados durante el entrenamiento) y ofrece el método `infer()` para procesar un video completo.
-- El método `infer()` retorna un `pandas.DataFrame` con columnas `frame`, `class_name`, `class_id`, `confidence` y `bbox` (coordenadas `[x1, y1, x2, y2]`).
-- Opcionalmente se puede definir un `stride` para muestrear frames y un umbral de confianza (`threshold`) para filtrar detecciones.
-- El método `save()` facilita persistir los resultados en disco (`.parquet` o `.csv`).
+1. **Descarga del dataset**: se crea un cliente de Roboflow con la API key `dcZKRj2xqwPU94CoAUcS`, se accede al workspace `sebas-xxi8x`, al proyecto `dataset-millonarios` y se descarga la versión 4 en formato COCO.
+2. **Entrenamiento**: se instancia `RFDETRBase` sin pesos preentrenados explícitos y se invoca `model.train()` especificando ruta del dataset, 15 épocas, batch size de 4, `grad_accum_steps=1` y tasa de aprendizaje `1e-4`.
+3. **Visualización de métricas**: se abre la imagen `/content/output/metrics_plot.png` mediante `PIL.Image` para inspeccionar la curva de entrenamiento generada por RF-DETR.
+4. **Exportación del mejor checkpoint**: se vuelve a instanciar `RFDETRBase` cargando los pesos `checkpoint_best_total.pth` almacenados en `/content/output/` y se ejecuta `model.export()` para producir el archivo ONNX listo para despliegue.
 
-### Ejemplo rápido
+> **Nota:** El script ejecuta estas instrucciones de manera secuencial al importarse. Asegúrate de haber instalado previamente las dependencias `roboflow`, `rfdetr` y `Pillow`, además de contar con las credenciales correctas y permisos sobre el workspace de Roboflow.
 
-```python
-from pathlib import Path
-
-from src.inference import VideoInference
-
-inference = VideoInference(model_path=Path("checkpoints/rfdetr_finetuned.pth"))
-dataset = inference.infer(video_path=Path("data/partido.mp4"), threshold=0.4)
-inference.save(dataset, output_path=Path("outputs/partido.parquet"))
-```
-
-El DataFrame resultante puede integrarse con los módulos de clustering, tracking y estadística para continuar con el pipeline descrito en la metodología.
+Para personalizar el flujo, edita los parámetros del proyecto, versión, hiperparámetros de entrenamiento o rutas de salida dentro del script según las necesidades de tu investigación.
 
 ## Referencias útiles
 
