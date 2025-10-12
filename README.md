@@ -86,6 +86,29 @@ El módulo [`src/training/rfdetr_finetuner.py`](src/training/rfdetr_finetuner.py
 
 Para utilizarlo, se debe instanciar con el modelo RF-DETR adaptado, *dataloaders* de entrenamiento y validación, optimizador y *scheduler*. Posteriormente, llamar a `train()` ejecutará el fine-tuning completo y devolverá el historial de métricas recopiladas.
 
+## Inferencia de video y generación de datasets
+
+El módulo [`src/inference/video_inference.py`](src/inference/video_inference.py) permite convertir la salida frame a frame del detector RF-DETR en un dataset estructurado:
+
+- `VideoInference` carga un checkpoint fine-tuneado (aprovechando los metadatos de clases guardados durante el entrenamiento) y ofrece el método `infer()` para procesar un video completo.
+- El método `infer()` retorna un `pandas.DataFrame` con columnas `frame`, `class_name`, `class_id`, `confidence` y `bbox` (coordenadas `[x1, y1, x2, y2]`).
+- Opcionalmente se puede definir un `stride` para muestrear frames y un umbral de confianza (`threshold`) para filtrar detecciones.
+- El método `save()` facilita persistir los resultados en disco (`.parquet` o `.csv`).
+
+### Ejemplo rápido
+
+```python
+from pathlib import Path
+
+from src.inference import VideoInference
+
+inference = VideoInference(model_path=Path("checkpoints/rfdetr_finetuned.pth"))
+dataset = inference.infer(video_path=Path("data/partido.mp4"), threshold=0.4)
+inference.save(dataset, output_path=Path("outputs/partido.parquet"))
+```
+
+El DataFrame resultante puede integrarse con los módulos de clustering, tracking y estadística para continuar con el pipeline descrito en la metodología.
+
 ## Referencias útiles
 
 - RF-DETR: Chen et al., "RF-DETR: End-to-End Object Detection with Relation Fusion." 2023.
