@@ -8,6 +8,7 @@ Algoritmo de extracción de estadísticas por medio de técnicas de computer vis
    - Realizar fine-tuning de YOLO y RF-DETR sobre un dataset público que incluya anotaciones de jugadores, árbitros y balón.
    - Alinear esquemas de anotación entre ambos modelos para obtener inferencias consistentes frame a frame.
    - Documentar hiperparámetros relevantes (épocas, tasa de aprendizaje, augmentations) para garantizar reproducibilidad.
+   - Reutilizar la clase `RFDetrFineTuner` definida en `src/training/rfdetr_finetuner.py` para estructurar el proceso de entrenamiento, validación y guardado de checkpoints del detector RF-DETR.
 2. **Clustering por uniformes para separar equipos**
    - Filtrar detecciones de la clase *jugador* y extraer descriptores visuales (color promedio del uniforme, embeddings de apariencia o features CLIP).
    - Aplicar clustering no supervisado (por ejemplo, K-Means o GMM con K=2) para asignar cada jugador al equipo local o visitante.
@@ -74,6 +75,16 @@ Algoritmo de extracción de estadísticas por medio de técnicas de computer vis
 1. Validar rendimiento comparativo de los modelos fine-tuneados (YOLO y RF-DETR) en un subconjunto del video y analizar fallos.
 2. Seleccionar e integrar un tracker multi-objeto robusto para jugadores y balón.
 3. Diseñar un esquema inicial de detección de eventos simples (posesión, pases) para iterar rápidamente.
+
+## Implementación del entrenamiento de RF-DETR
+
+El módulo [`src/training/rfdetr_finetuner.py`](src/training/rfdetr_finetuner.py) encapsula la lógica necesaria para fine-tunear RF-DETR sobre un dataset de fútbol:
+
+- `TrainingConfig` permite parametrizar épocas, acumulación de gradientes, clipping y carpeta de checkpoints.
+- `RFDetrFineTuner` centraliza la preparación de batches, el bucle de entrenamiento/validación, el guardado de checkpoints y la evaluación opcional con un *evaluator* compatible (por ejemplo, COCO o métricas personalizadas).
+- El módulo asume el formato habitual de Detectron2/RF-DETR: en entrenamiento el modelo devuelve un diccionario de pérdidas y en validación genera predicciones listas para evaluación.
+
+Para utilizarlo, se debe instanciar con el modelo RF-DETR adaptado, *dataloaders* de entrenamiento y validación, optimizador y *scheduler*. Posteriormente, llamar a `train()` ejecutará el fine-tuning completo y devolverá el historial de métricas recopiladas.
 
 ## Referencias útiles
 
