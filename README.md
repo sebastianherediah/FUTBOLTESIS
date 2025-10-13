@@ -11,7 +11,7 @@ Algoritmo de extracción de estadísticas por medio de técnicas de computer vis
    - Utilizar el script `src/training/rfdetr_finetuner.py` para automatizar la descarga del dataset, el fine-tuning de RF-DETR y la exportación del modelo resultante.
 2. **Clustering por uniformes para separar equipos**
    - Filtrar detecciones de la clase *jugador* y extraer descriptores visuales (color promedio del uniforme, embeddings de apariencia o features CLIP).
-   - Aplicar clustering no supervisado (por ejemplo, K-Means o GMM con K=2) para asignar cada jugador al equipo local o visitante.
+   - Utilizar la clase [`Cluster`](src/clustering/cluster.py) para generar embeddings consistentes y agrupar automáticamente en dos equipos (*local* y *visitante*).
    - Implementar mecanismos de corrección manual o reglas basadas en posición inicial para resolver posibles ambigüedades.
 3. **Identificación individual de jugadores**
    - Emparejar detecciones sucesivas usando un tracker multi-objeto (ByteTrack, DeepSORT) para mantener IDs temporales.
@@ -98,6 +98,16 @@ La clase [`VideoInference`](src/inference/video_inference.py) permite generar un
 - Devuelve un `pandas.DataFrame` con columnas `Frame`, `ClassName` y `BBox` listo para su análisis posterior.
 
 El método `process` muestra una barra de progreso usando `tqdm` y asegura que las bounding boxes se serialicen como listas `[x1, y1, x2, y2]`, facilitando su almacenamiento en disco o en bases de datos.
+
+## Clustering automático de equipos
+
+El módulo [`src/clustering/cluster.py`](src/clustering/cluster.py) implementa la clase `Cluster`, diseñada para tomar las detecciones generadas por `VideoInference` y separar la clase *jugador* en los dos equipos presentes en el partido:
+
+- Extrae los recortes de cada `BBox` perteneciente a la clase objetivo directamente sobre el video original.
+- Genera embeddings de apariencia mediante un encoder `ResNet18` preentrenado en ImageNet y normaliza los vectores resultantes.
+- Agrupa los embeddings con K-Means (`k=2`) y asigna etiquetas semánticas `local` y `visitante`, devolviendo un `DataFrame` con las columnas originales más la asignación de equipo y el identificador de clúster.
+
+El método `cluster_players` retorna un objeto `ClusterResult` que incluye el `DataFrame` anotado, la matriz completa de embeddings y el modelo de K-Means utilizado, permitiendo inspeccionar los centroides o reutilizar el agrupamiento en pasos posteriores del pipeline.
 
 ## Referencias útiles
 
