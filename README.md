@@ -8,7 +8,7 @@ Algoritmo de extracción de estadísticas por medio de técnicas de computer vis
    - Realizar fine-tuning de YOLO y RF-DETR sobre un dataset público que incluya anotaciones de jugadores, árbitros y balón.
    - Alinear esquemas de anotación entre ambos modelos para obtener inferencias consistentes frame a frame.
    - Documentar hiperparámetros relevantes (épocas, tasa de aprendizaje, augmentations) para garantizar reproducibilidad.
-   - Reutilizar la clase `RFDetrFineTuner` definida en `src/training/rfdetr_finetuner.py` para estructurar el proceso de entrenamiento, validación y guardado de checkpoints del detector RF-DETR.
+   - Utilizar el script `src/training/rfdetr_finetuner.py` para automatizar la descarga del dataset, el fine-tuning de RF-DETR y la exportación del modelo resultante.
 2. **Clustering por uniformes para separar equipos**
    - Filtrar detecciones de la clase *jugador* y extraer descriptores visuales (color promedio del uniforme, embeddings de apariencia o features CLIP).
    - Aplicar clustering no supervisado (por ejemplo, K-Means o GMM con K=2) para asignar cada jugador al equipo local o visitante.
@@ -76,28 +76,28 @@ Algoritmo de extracción de estadísticas por medio de técnicas de computer vis
 2. Seleccionar e integrar un tracker multi-objeto robusto para jugadores y balón.
 3. Diseñar un esquema inicial de detección de eventos simples (posesión, pases) para iterar rápidamente.
 
-## Implementación del entrenamiento de RF-DETR
-
-El módulo [`src/training/rfdetr_finetuner.py`](src/training/rfdetr_finetuner.py) encapsula la lógica necesaria para fine-tunear RF-DETR sobre un dataset de fútbol:
-
-- `TrainingConfig` permite parametrizar épocas, acumulación de gradientes, clipping y carpeta de checkpoints.
-- `RFDetrFineTuner` centraliza la preparación de batches, el bucle de entrenamiento/validación, el guardado de checkpoints y la evaluación opcional con un *evaluator* compatible (por ejemplo, COCO o métricas personalizadas).
-- El módulo asume el formato habitual de Detectron2/RF-DETR: en entrenamiento el modelo devuelve un diccionario de pérdidas y en validación genera predicciones listas para evaluación.
-
-Para utilizarlo, se debe instanciar con el modelo RF-DETR adaptado, *dataloaders* de entrenamiento y validación, optimizador y *scheduler*. Posteriormente, llamar a `train()` ejecutará el fine-tuning completo y devolverá el historial de métricas recopiladas.
-
 ## Entrenamiento automatizado con Roboflow y RF-DETR
 
-El script [`src/inference/video_inference.py`](src/inference/video_inference.py) ahora documenta un flujo completo para descargar un dataset desde Roboflow, entrenar RF-DETR y exportar el modelo resultante:
+El script [`src/training/rfdetr_finetuner.py`](src/training/rfdetr_finetuner.py) plasma paso a paso el flujo compartido para descargar el dataset, entrenar y exportar RF-DETR:
 
 1. **Descarga del dataset**: se crea un cliente de Roboflow con la API key `dcZKRj2xqwPU94CoAUcS`, se accede al workspace `sebas-xxi8x`, al proyecto `dataset-millonarios` y se descarga la versión 4 en formato COCO.
-2. **Entrenamiento**: se instancia `RFDETRBase` sin pesos preentrenados explícitos y se invoca `model.train()` especificando ruta del dataset, 15 épocas, batch size de 4, `grad_accum_steps=1` y tasa de aprendizaje `1e-4`.
-3. **Visualización de métricas**: se abre la imagen `/content/output/metrics_plot.png` mediante `PIL.Image` para inspeccionar la curva de entrenamiento generada por RF-DETR.
+2. **Entrenamiento**: se instancia `RFDETRBase` y se ejecuta `model.train()` indicando la ruta del dataset, 15 épocas, batch size de 4, `grad_accum_steps=1` y tasa de aprendizaje `1e-4`.
+3. **Visualización de métricas**: se abre la imagen `/content/output/metrics_plot.png` con `PIL.Image` para inspeccionar la curva de entrenamiento generada por RF-DETR.
 4. **Exportación del mejor checkpoint**: se vuelve a instanciar `RFDETRBase` cargando los pesos `checkpoint_best_total.pth` almacenados en `/content/output/` y se ejecuta `model.export()` para producir el archivo ONNX listo para despliegue.
 
-> **Nota:** El script ejecuta estas instrucciones de manera secuencial al importarse. Asegúrate de haber instalado previamente las dependencias `roboflow`, `rfdetr` y `Pillow`, además de contar con las credenciales correctas y permisos sobre el workspace de Roboflow.
+> **Nota:** El script corre estas instrucciones secuencialmente al importarse. Asegúrate de haber instalado `roboflow`, `rfdetr` y `Pillow`, además de contar con credenciales válidas sobre el workspace de Roboflow.
 
-Para personalizar el flujo, edita los parámetros del proyecto, versión, hiperparámetros de entrenamiento o rutas de salida dentro del script según las necesidades de tu investigación.
+Para personalizar el flujo, modifica parámetros del proyecto, versión, hiperparámetros de entrenamiento o rutas de salida directamente en el script.
+
+## Inferencia de video con RF-DETR
+
+La clase [`VideoInference`](src/inference/video_inference.py) permite generar un dataset de detecciones a partir de un video completo:
+
+- Carga un checkpoint de RF-DETR preservando los nombres de clases almacenados en el metadata del entrenamiento.
+- Procesa frame a frame el video indicado, invocando `model.predict` con el umbral de confianza configurado.
+- Devuelve un `pandas.DataFrame` con columnas `Frame`, `ClassName` y `BBox` listo para su análisis posterior.
+
+El método `process` muestra una barra de progreso usando `tqdm` y asegura que las bounding boxes se serialicen como listas `[x1, y1, x2, y2]`, facilitando su almacenamiento en disco o en bases de datos.
 
 ## Referencias útiles
 
