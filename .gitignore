@@ -1,0 +1,8 @@
+.venv
+.cache
+__pycache__/
+*.pth
+*.mp4
+*.jpg
+*.csv
+

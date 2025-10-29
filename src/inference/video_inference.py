@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 from argparse import Namespace
-from typing import List, Sequence
+from pathlib import Path
+from typing import List, Optional, Sequence
 
 import cv2
 import pandas as pd
@@ -77,4 +79,61 @@ class VideoInference:
         return df
 
 
-__all__ = ["VideoInference"]
+def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Ejecuta inferencia con RF-DETR sobre un video y exporta las detecciones."
+    )
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="Ruta al checkpoint de RF-DETR (archivo .pth).",
+    )
+    parser.add_argument(
+        "--video",
+        required=True,
+        help="Ruta al archivo de video a procesar.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Confianza mínima (0-1) para conservar detecciones. Valor por defecto: 0.5",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Ruta donde guardar las detecciones en CSV. Si se omite, solo se imprime un resumen.",
+    )
+    return parser.parse_args(argv)
+
+
+def _run_cli(args: argparse.Namespace) -> None:
+    inference = VideoInference(args.model)
+    detections = inference.process(args.video, threshold=args.threshold)
+
+    if detections.empty:
+        print("No se encontraron detecciones con el umbral especificado.")
+    else:
+        print(f"Detecciones totales: {len(detections)}")
+        print(detections.head())
+
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        detections.to_csv(output_path, index=False)
+        print(f"Detecciones guardadas en: {output_path}")
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    args = _parse_args(argv)
+    if not 0.0 <= args.threshold <= 1.0:
+        raise ValueError("El parámetro --threshold debe estar en el rango [0, 1]")
+    _run_cli(args)
+
+
+__all__ = ["VideoInference", "main"]
+
+
+if __name__ == "__main__":
+    main()
