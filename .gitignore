@@ -6,3 +6,8 @@ __pycache__/
 *.jpg
 *.csv
 
+# Directorios generados
+outputs/
+torch/
+rfdetr/
+.ipynb_checkpoints/

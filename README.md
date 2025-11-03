@@ -7,7 +7,7 @@ El pipeline actual permite:
 - Detectar jugadores, árbitros y balón frame a frame a partir de un checkpoint RF-DETR preentrenado.
 - Separar automáticamente a los equipos mediante embeddings de apariencia.
 - Estimar 57 keypoints de homografía (modelo HRNet) en cada frame.
-- Proyectar detecciones al plano métrico del campo y renderizar un minimapa superpuesto al video.
+- Proyectar detecciones al plano métrico del campo y superponer un minimapa informativo sobre el video.
 
 ---
 
@@ -47,8 +47,7 @@ pip install rfdetr opencv-python albumentations pandas numpy tqdm scikit-learn p
 | `outputs/Homografia.pth` | Modelo HRNet (57 keypoints + canal de fondo) entrenado para homografía. |
 | `outputs/detecciones_con_equipos.csv` | Ejemplo de detecciones con la columna `Team`. |
 
-> Estos archivos viven en rutas ignoradas (`*.pth`, `*.mp4`, `*.csv`, `outputs/`).  
-> Descárgalos desde el almacenamiento compartido o reprodúcelos ejecutando los scripts descritos en la sección 5.
+> Estos archivos se almacenan en rutas ignoradas (`*.pth`, `*.mp4`, `*.csv`, `outputs/`). Descárgalos desde el almacenamiento compartido o reprodúcelos ejecutando los scripts de la sección 5.
 
 ---
 
@@ -57,7 +56,7 @@ pip install rfdetr opencv-python albumentations pandas numpy tqdm scikit-learn p
 1. Ejecutar inferencia sobre el video para generar detecciones frame a frame.
 2. Etiquetar cada jugador como `local` o `visitante` mediante clustering de uniformes.
 3. Estimar keypoints de homografía usando HRNet y obtener la matriz de proyección por frame.
-4. Proyectar jugadores y balón al plano del campo.
+4. Proyectar jugadores y balón al plano métrico del campo.
 5. Renderizar un minimapa 2D y superponerlo sobre el video original.
 6. Re-empacar el video con códecs compatibles (H.264 + yuv420p) para facilitar la reproducción.
 
@@ -124,7 +123,7 @@ python -m src.homography.render_minimap_frame \
   --output outputs/minimap_frame660.png
 ```
 
-- Permite depurar un frame aislado: dibuja keypoints detectados y minimapa renderizado.
+- Permite depurar un frame aislado: dibuja keypoints detectados y el minimapa generado.
 - Usa `--flip-y` para alinear el minimapa con la orientación del video (validado manualmente).
 
 ### 5.5 Renderizar minimapa para todo el video
@@ -140,10 +139,10 @@ python -m src.homography.render_minimap_video \
   --min-matches 8
 ```
 
-- Para cada frame: predice keypoints, estima homografía, proyecta detecciones y superpone minimapa.
-- `--flip-y` evita invertir horizontalmente; valores positivos de correlación se corrigen automáticamente.
+- Para cada frame: predice keypoints, estima homografía, proyecta detecciones y superpone el minimapa.
+- `--flip-y` evita inversiones horizontales; se corrige automáticamente la correlación negativa en eje X.
 - `--min-matches` exige un mínimo de keypoints válidos antes de aceptar la homografía (sugerido ≥8).
-- Exporta a resolución `960x540` (tamaño del modelo HRNet).
+- Exporta a resolución `960x540` (tamaño esperado por el modelo HRNet).
 
 ### 5.6 Re-encode compatible con VS Code
 
@@ -154,29 +153,29 @@ ffmpeg -y -i outputs/videofinalconhomografia.mp4 \
 ```
 
 - El reproductor integrado de VS Code requiere H.264 + `yuv420p`.
-- El proceso es reproducible y debe documentarse como paso final del entregable.
+- Este paso debe documentarse como parte del entregable final para asegurar la compatibilidad.
 
 ---
 
 ## 6. Componentes clave del módulo de homografía
 
-- `src/homography/config.py`: metadatos (dimensiones de entrada, stride, mapeo índice→nombre).
+- `src/homography/config.py`: metadatos (dimensiones de entrada, stride del heatmap, mapeo índice→nombre).
 - `src/homography/field_layout.py`: definición métrica de los 57 puntos del campo profesional.
 - `src/homography/model.py`: implementación de HRNet para inferencia (backbone + cabeza de heatmaps).
-- `src/homography/predictor.py`: wrapper de carga del checkpoint `Homografia.pth` y ordenamiento por confianza.
+- `src/homography/predictor.py`: wrapper que carga el checkpoint `Homografia.pth` y ordena por confianza.
 - `src/homography/homography_estimator.py`: estima la matriz 3×3 (RANSAC) y proyecta puntos al plano del campo.
-- `src/homography/minimap.py`: renderizador parametrizable (flip vertical/horizontal, colores por equipo, escala).
+- `src/homography/minimap.py`: renderizador parametrizable (flip en ejes, colores según equipo, escala).
 - `src/homography/render_minimap_frame.py` y `src/homography/render_minimap_video.py`: CLIs para depuración y producción.
 
 ---
 
 ## 7. Consideraciones metodológicas
 
-- **Orientación del campo:** la cámara del video base obliga a invertir el eje Y (`--flip-y`) para que los movimientos coincidan con la realidad.
-- **Keypoints mínimos:** si un frame no alcanza el umbral configurado, se reutiliza la última homografía válida para mantener continuidad.
+- **Orientación del campo:** la cámara del video base obliga a invertir el eje Y (`--flip-y`) para alinear el minimapa con la jugada real.
+- **Keypoints mínimos:** si un frame no alcanza el umbral establecido, se reutiliza la última homografía válida para mantener continuidad.
 - **Control de calidad:** inspecciona frames representativos (`render_minimap_frame`) antes de procesar el video completo.
-- **Rendimiento:** procesar 2 245 frames tarda ~5 min en CPU; usa `--device cuda` cuando haya GPU disponible.
-- **Reanudación segura:** si cancelas el script, elimina el MP4 parcial antes de volver a ejecutarlo para evitar archivos corruptos.
+- **Rendimiento:** procesar 2 245 frames tarda ~5 minutos en CPU; usa `--device cuda` si hay GPU disponible.
+- **Reanudación segura:** elimina el MP4 parcial antes de relanzar `render_minimap_video` si interrumpes la ejecución.
 
 ---
 
@@ -197,7 +196,7 @@ python -m src.homography.render_minimap_video \
   --output outputs/videofinalconhomografia.mp4 \
   --flip-y
 
-# 4) Re-encoder para VS Code
+# 4) Re-encoder compatible VS Code
 ffmpeg -y -i outputs/videofinalconhomografia.mp4 \
   -c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p \
   outputs/videofinalconhomografia_vscode.mp4
@@ -207,7 +206,7 @@ ffmpeg -y -i outputs/videofinalconhomografia.mp4 \
 
 ## 9. Trabajo futuro
 
-- Integrar un tracker (ByteTrack/DeepSORT) para mantener IDs persistentes y habilitar métricas de posesión.
+- Integrar un tracker (ByteTrack/DeepSORT) para mantener IDs persistentes y habilitar métricas de posesión y pases.
 - Añadir tests unitarios que validen la estimación de homografía y la orientación del minimapa.
 - Extender el renderizador con heatmaps de ocupación o trayectorias individuales.
 - Evaluar el modelo HRNet frente a diferentes ángulos de cámara y diseñar estrategias de refinamiento.

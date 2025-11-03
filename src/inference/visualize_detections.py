@@ -14,17 +14,12 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from homography.field_layout import DEFAULT_FIELD_LAYOUT
-from homography.minimap import MinimapRenderer, PlayerPoint
-
-
 @dataclass(frozen=True)
 class Detection:
     frame: int
     class_name: str
     bbox: Tuple[int, int, int, int]
     team: Optional[str] = None
-    field_point: Optional[Tuple[float, float]] = None
 
 
 def _parse_bbox(raw: object) -> Optional[Tuple[int, int, int, int]]:
@@ -55,8 +50,6 @@ def _load_detections(csv_path: Path) -> Dict[int, List[Detection]]:
         raise ValueError(f"El CSV no contiene las columnas obligatorias: {missing}")
 
     has_team = "Team" in df.columns
-    has_field = {"FieldX", "FieldY"}.issubset(df.columns)
-
     grouped: Dict[int, List[Detection]] = {}
     for row in df.itertuples(index=False):
         try:
@@ -73,17 +66,7 @@ def _load_detections(csv_path: Path) -> Dict[int, List[Detection]]:
         if team is not None and pd.isna(team):
             team = None
 
-        if has_field:
-            field_x = getattr(row, "FieldX")
-            field_y = getattr(row, "FieldY")
-            if pd.isna(field_x) or pd.isna(field_y):
-                field_point = None
-            else:
-                field_point = (float(field_x), float(field_y))
-        else:
-            field_point = None
-
-        grouped.setdefault(frame, []).append(Detection(frame, class_name, bbox, team, field_point))
+        grouped.setdefault(frame, []).append(Detection(frame, class_name, bbox, team))
 
     return grouped
 
@@ -139,7 +122,6 @@ def visualize(
     *,
     fps: Optional[float] = None,
     codec: str = "mp4v",
-    draw_minimap: bool = False,
 ) -> Path:
     detections = _load_detections(detections_path)
 
@@ -161,15 +143,6 @@ def visualize(
             "Prueba con otro códec (por ejemplo, avc1, xvid, mjpg) o usa ffmpeg."
         )
 
-    minimap_renderer: Optional[MinimapRenderer] = None
-    if draw_minimap:
-        try:
-            minimap_renderer = MinimapRenderer(DEFAULT_FIELD_LAYOUT)
-        except ValueError as exc:
-            raise RuntimeError(
-                "No se pudo inicializar el minimapa. Asegúrate de definir DEFAULT_FIELD_LAYOUT en homography/field_layout.py."
-            ) from exc
-
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_idx = 0
 
@@ -182,20 +155,6 @@ def visualize(
 
                 frame_detections = detections.get(frame_idx, [])
                 annotated = _annotate_frame(frame, frame_detections)
-
-                if minimap_renderer:
-                    players: List[PlayerPoint] = []
-                    ball_position: Optional[Tuple[float, float]] = None
-                    for det in frame_detections:
-                        if det.field_point is None:
-                            continue
-                        if det.class_name.lower() == "balon":
-                            ball_position = det.field_point
-                        elif det.class_name.lower() == "jugador":
-                            players.append(PlayerPoint(det.field_point[0], det.field_point[1], det.team))
-                    if players or ball_position is not None:
-                        minimap = minimap_renderer.render(players, ball_position=ball_position)
-                        annotated = MinimapRenderer.overlay(annotated, minimap)
 
                 writer.write(annotated)
 
@@ -242,11 +201,6 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Si se especifica, usa ffmpeg para renderizar (requiere ffmpeg instalado).",
     )
-    parser.add_argument(
-        "--minimap",
-        action="store_true",
-        help="Dibuja un minimapa 2D usando las columnas FieldX/FieldY del CSV (requiere layout definido).",
-    )
     return parser.parse_args(argv)
 
 
@@ -258,7 +212,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             args.detections,
             args.output,
             fps=args.fps,
-            draw_minimap=args.minimap,
         )
     else:
         result = visualize(
@@ -267,7 +220,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             args.output,
             fps=args.fps,
             codec=args.codec,
-            draw_minimap=args.minimap,
         )
     print(f"Video anotado guardado en: {result}")
 
@@ -278,12 +230,11 @@ def visualize_with_ffmpeg(
     output_path: Path,
     *,
     fps: Optional[float] = None,
-    draw_minimap: bool = False,
 ) -> Path:
     """Alternativa usando ffmpeg via subprocess para códecs más compatibles."""
 
     temp_output = output_path.with_suffix(".tmp.mp4")
-    visualize(video_path, detections_path, temp_output, fps=fps, codec="mp4v", draw_minimap=draw_minimap)
+    visualize(video_path, detections_path, temp_output, fps=fps, codec="mp4v")
 
     cmd = [
         "ffmpeg",

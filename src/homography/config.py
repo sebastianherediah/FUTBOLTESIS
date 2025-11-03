@@ -1,0 +1,77 @@
+"""Configuration and metadata for the homography keypoint model."""
+
+from __future__ import annotations
+
+from typing import Dict, List, Tuple
+
+IMAGE_WIDTH: int = 960
+IMAGE_HEIGHT: int = 540
+NUM_KEYPOINTS: int = 57
+# The HRNet architecture used in training downsamples by a factor of 4 and then upsamples by 2,
+# yielding a final stride of 2 between heatmap coordinates and the input image.
+HEATMAP_STRIDE: int = 2
+
+KEYPOINT_INDEX_TO_NAME: Dict[int, str] = {
+    0: "L_GOAL_TL_POST",
+    1: "L_GOAL_TR_POST",
+    2: "L_GOAL_BL_POST",
+    3: "L_GOAL_BR_POST",
+    4: "L_GOAL_AREA_BR_CORNER",
+    5: "L_GOAL_AREA_TR_CORNER",
+    6: "L_GOAL_AREA_BL_CORNER",
+    7: "L_GOAL_AREA_TL_CORNER",
+    8: "L_PENALTY_AREA_BR_CORNER",
+    9: "L_PENALTY_AREA_TR_CORNER",
+    10: "L_PENALTY_AREA_BL_CORNER",
+    11: "L_PENALTY_AREA_TL_CORNER",
+    12: "BL_PITCH_CORNER",
+    13: "TL_PITCH_CORNER",
+    14: "B_TOUCH_AND_HALFWAY_LINES_INTERSECTION",
+    15: "T_TOUCH_AND_HALFWAY_LINES_INTERSECTION",
+    16: "R_PENALTY_AREA_BL_CORNER",
+    17: "R_PENALTY_AREA_TL_CORNER",
+    18: "R_PENALTY_AREA_BR_CORNER",
+    19: "R_PENALTY_AREA_TR_CORNER",
+    20: "R_GOAL_AREA_BL_CORNER",
+    21: "R_GOAL_AREA_TL_CORNER",
+    22: "R_GOAL_AREA_BR_CORNER",
+    23: "R_GOAL_AREA_TR_CORNER",
+    24: "R_GOAL_TR_POST",
+    25: "R_GOAL_TL_POST",
+    26: "R_GOAL_BL_POST",
+    27: "R_GOAL_BR_POST",
+    28: "BR_PITCH_CORNER",
+    29: "TR_PITCH_CORNER",
+    30: "CENTER_CIRCLE_TANGENT_TR",
+    31: "CENTER_CIRCLE_TANGENT_TL",
+    32: "CENTER_CIRCLE_TANGENT_BR",
+    33: "CENTER_CIRCLE_TANGENT_BL",
+    34: "CENTER_CIRCLE_TR",
+    35: "CENTER_CIRCLE_TL",
+    36: "CENTER_CIRCLE_BR",
+    37: "CENTER_CIRCLE_BL",
+    38: "CENTER_CIRCLE_R",
+    39: "CENTER_CIRCLE_L",
+    40: "T_HALFWAY_LINE_AND_CENTER_CIRCLE_INTERSECTION",
+    41: "B_HALFWAY_LINE_AND_CENTER_CIRCLE_INTERSECTION",
+    42: "CENTER_MARK",
+    43: "LEFT_CIRCLE_R",
+    44: "BL_16M_LINE_AND_PENALTY_ARC_INTERSECTION",
+    45: "TL_16M_LINE_AND_PENALTY_ARC_INTERSECTION",
+    46: "LEFT_CIRCLE_TANGENT_T",
+    47: "LEFT_CIRCLE_TANGENT_B",
+    48: "L_PENALTY_MARK",
+    49: "L_MIDDLE_PENALTY",
+    50: "RIGHT_CIRCLE_L",
+    51: "BR_16M_LINE_AND_PENALTY_ARC_INTERSECTION",
+    52: "TR_16M_LINE_AND_PENALTY_ARC_INTERSECTION",
+    53: "RIGHT_CIRCLE_TANGENT_T",
+    54: "RIGHT_CIRCLE_TANGENT_B",
+    55: "R_PENALTY_MARK",
+    56: "R_MIDDLE_PENALTY",
+}
+
+KEYPOINT_NAMES: List[str] = [KEYPOINT_INDEX_TO_NAME[idx] for idx in range(NUM_KEYPOINTS)]
+
+MEAN_RGB: Tuple[float, float, float] = (0.485, 0.456, 0.406)
+STD_RGB: Tuple[float, float, float] = (0.229, 0.224, 0.225)
