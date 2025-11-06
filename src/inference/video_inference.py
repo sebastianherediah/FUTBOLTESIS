@@ -16,14 +16,9 @@ from rfdetr import RFDETRBase
 
 
 class VideoInference:
-    """Realiza inferencia sobre un video completo usando un checkpoint de RF-DETR.
-
-    El flujo carga el modelo especificado, procesa cada frame del video y
-    devuelve un :class:`pandas.DataFrame` con las detecciones encontradas.
-    """
+    """Realiza inferencia sobre un video completo usando un checkpoint de RF-DETR."""
 
     def __init__(self, model_path: str) -> None:
-        # Permitir deserializar argparse.Namespace contenidos en el checkpoint.
         torch.serialization.add_safe_globals([Namespace])
 
         ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
@@ -42,6 +37,9 @@ class VideoInference:
     def process(self, video_path: str, threshold: float = 0.5) -> pd.DataFrame:
         """Procesa un vídeo y retorna detecciones con columnas Frame/ClassName/BBox."""
         cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError(f"No se pudo abrir el video: {video_path}")
+
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         results = []
         frame_idx = 0
@@ -75,8 +73,7 @@ class VideoInference:
                 pbar.update(1)
 
         cap.release()
-        df = pd.DataFrame(results, columns=["Frame", "ClassName", "BBox"])
-        return df
+        return pd.DataFrame(results, columns=["Frame", "ClassName", "BBox"])
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -115,7 +112,7 @@ def _run_cli(args: argparse.Namespace) -> None:
     if detections.empty:
         print("No se encontraron detecciones con el umbral especificado.")
     else:
-        print(f"Detecciones totales: {len(detections)}")
+        print(f"Detecciones totales: {len(detecciones)}")
         print(detections.head())
 
     if args.output:
