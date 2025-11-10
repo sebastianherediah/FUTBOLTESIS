@@ -56,6 +56,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Frames mínimos consecutivos para consolidar un tiro.",
     )
     parser.add_argument(
+        "--goal-distance-threshold",
+        type=float,
+        default=120.0,
+        help="Distancia máxima (en píxeles) entre el centro del balón y el centro del arco para considerar un tiro.",
+    )
+    parser.add_argument(
         "--team-order",
         nargs="+",
         default=["COLOMBIA", "BRASIL"],
@@ -120,6 +126,7 @@ def detect_shots(
     goal_class: str,
     player_class: str,
     min_duration: int,
+    goal_distance_threshold: float,
 ) -> pd.DataFrame:
     frames = sorted(detections["Frame"].unique())
     grouped = detections.groupby("Frame")
@@ -137,12 +144,18 @@ def detect_shots(
         player_rows = frame_rows[frame_rows["ClassName"].str.lower() == player_class.lower()]
 
         if ball_rows.empty or goal_rows.empty:
-            inside = False
+            ball_near_goal = False
         else:
-            ball_center = _bbox_center(ball_rows.iloc[0]["BBox"])
+            ball_bbox = ball_rows.iloc[0]["BBox"]
+            ball_center = _bbox_center(ball_bbox)
             inside = any(_point_in_bbox(ball_center, bbox) for bbox in goal_rows["BBox"])
+            distances = [
+                _euclidean(ball_center, _bbox_center(goal_bbox)) for goal_bbox in goal_rows["BBox"]
+            ]
+            min_distance = min(distances) if distances else float("inf")
+            ball_near_goal = inside or (min_distance <= goal_distance_threshold)
 
-        if not inside:
+        if not ball_near_goal:
             if active and current_start is not None and current_end is not None:
                 duration = current_end - current_start + 1
                 if duration >= min_duration:
@@ -218,6 +231,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         goal_class=args.goal_class,
         player_class=args.player_class,
         min_duration=args.min_duration,
+        goal_distance_threshold=args.goal_distance_threshold,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

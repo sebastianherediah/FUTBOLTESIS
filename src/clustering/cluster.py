@@ -13,6 +13,12 @@ from sklearn.cluster import KMeans
 from torch import nn
 
 from PIL import Image
+from tqdm import tqdm
+
+try:  # pragma: no cover
+    import psutil
+except ImportError:  # pragma: no cover
+    psutil = None
 
 try:  # pragma: no cover - import guard
     from torchvision import transforms
@@ -64,6 +70,7 @@ class Cluster:
         batch_size: int = 32,
         device: Optional[str] = None,
         random_state: int = 0,
+        show_progress: bool = False,
     ) -> None:
         if encoder_name not in self.SUPPORTED_ENCODERS:
             raise ValueError(
@@ -73,6 +80,10 @@ class Cluster:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.batch_size = max(1, batch_size)
         self.random_state = random_state
+        self.show_progress = bool(show_progress)
+        self._psutil_process = psutil.Process() if (self.show_progress and psutil is not None) else None
+        if self._psutil_process is not None:
+            self._psutil_process.cpu_percent(None)
 
         self.encoder: nn.Module
         self.transform: transforms.Compose
@@ -134,6 +145,15 @@ class Cluster:
 
         embeddings: List[np.ndarray] = []
         metadata: List[Dict[str, object]] = []
+        progress_bar = (
+            tqdm(
+                total=int(player_rows["Frame"].nunique()),
+                desc="Clustering jugadores",
+                unit="frame",
+            )
+            if (self.show_progress and not player_rows.empty)
+            else None
+        )
 
         try:
             for frame_idx, rows in player_rows.groupby("Frame"):
@@ -170,8 +190,13 @@ class Cluster:
 
                 embeddings.extend(crop_embeddings)
                 metadata.extend(frame_metadata)
+                if progress_bar is not None:
+                    progress_bar.set_postfix(self._progress_postfix(crops=len(crops)), refresh=False)
+                    progress_bar.update(1)
         finally:
             cap.release()
+            if progress_bar is not None:
+                progress_bar.close()
 
         if not embeddings:
             raise RuntimeError("No fue posible generar embeddings a partir de los recortes")
@@ -193,6 +218,12 @@ class Cluster:
         assignments["ClusterId"] = labels
 
         return ClusterResult(assignments=assignments, embeddings=feature_matrix, model=kmeans)
+    def _progress_postfix(self, *, crops: int) -> Dict[str, str]:
+        info: Dict[str, str] = {"crops": str(crops)}
+        if self._psutil_process is not None:
+            mem_gb = self._psutil_process.memory_info().rss / (1024**3)
+            info["mem_gb"] = f"{mem_gb:.2f}"
+        return info
 
     def _extract_crop(
         self, frame: np.ndarray, box: Iterable[float]

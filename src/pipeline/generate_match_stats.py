@@ -3,16 +3,34 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Sequence, Tuple
 
-import pandas as pd
+from .match_steps import (
+    DEFAULT_OUTPUT_ROOT,
+    run_clustering_stage,
+    run_inference_stage,
+    run_stats_stage,
+)
 
-from ..analytics import PassAnalyzer
-from ..clustering import Cluster
-from ..inference.detect_shots_simple import detect_shots
-from ..inference.video_inference import VideoInference
+
+class ProgressTracker:
+    """Simple helper to report overall pipeline progress as weighted percentages."""
+
+    def __init__(self, steps: Sequence[Tuple[str, float]]) -> None:
+        if not steps:
+            raise ValueError("steps no puede estar vacío")
+        self.weights = {name: float(weight) for name, weight in steps}
+        self.total = sum(self.weights.values())
+        if self.total <= 0.0:
+            raise ValueError("La suma de los pesos debe ser positiva")
+        self.completed = 0.0
+
+    def advance(self, step_name: str, message: str) -> None:
+        weight = self.weights.get(step_name, 0.0)
+        self.completed += weight
+        percent = min(100.0, (self.completed / self.total) * 100.0)
+        print(f"[{percent:5.1f}%] {message}")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -29,8 +47,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs") / "match_stats",
-        help="Directorio base donde se guardarán los resultados.",
+        default=DEFAULT_OUTPUT_ROOT,
+        help="Directorio base donde se guardarán los resultados (uno por video).",
     )
     parser.add_argument(
         "--threshold",
@@ -84,63 +102,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _ensure_output_dir(base_dir: Path, video_path: Path) -> Path:
-    base_dir.mkdir(parents=True, exist_ok=True)
-    video_stem = video_path.stem
-    run_dir = base_dir / video_stem
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
-
-
-def _map_cluster_labels(assignments: pd.DataFrame, team_labels: Optional[Sequence[str]]) -> Dict[str, str]:
-    unique = sorted(dict.fromkeys(assignments["Team"]))
-    if team_labels:
-        if len(team_labels) != len(unique):
-            raise ValueError(
-                f"Se esperaban {len(unique)} etiquetas para los equipos pero se recibieron {len(team_labels)}."
-            )
-        mapping = {label: str(team_labels[idx]).upper() for idx, label in enumerate(unique)}
-    else:
-        mapping = {label: label.upper() for label in unique}
-    return mapping
-
-
-def _format_bbox_list(box: Iterable[float]) -> str:
-    return json.dumps([float(v) for v in box])
-
-
-def _summarize_metrics(
-    passes: pd.DataFrame,
-    possession: pd.DataFrame,
-    shots: pd.DataFrame,
-) -> pd.DataFrame:
-    pass_counts = (
-        passes["Team"].astype(str).str.upper().value_counts().rename_axis("Team").reset_index(name="Passes")
-        if not passes.empty
-        else pd.DataFrame(columns=["Team", "Passes"])
-    )
-    possession_df = possession.copy()
-    if "Team" in possession_df.columns:
-        possession_df["Team"] = possession_df["Team"].astype(str).str.upper()
-    shots_counts = (
-        shots["AttackingTeam"].astype(str).str.upper().value_counts().rename_axis("Team").reset_index(name="Shots")
-        if not shots.empty
-        else pd.DataFrame(columns=["Team", "Shots"])
-    )
-
-    summary = pd.merge(pass_counts, possession_df, on="Team", how="outer")
-    summary = pd.merge(summary, shots_counts, on="Team", how="outer")
-
-    summary["Passes"] = summary["Passes"].fillna(0).astype(int)
-    summary["Shots"] = summary["Shots"].fillna(0).astype(int)
-    if "Possession" in summary.columns:
-        summary["Possession"] = summary["Possession"].fillna(0.0)
-    else:
-        summary["Possession"] = 0.0
-
-    return summary.sort_values("Team").reset_index(drop=True)
-
-
 def main() -> None:
     args = _parse_args()
 
@@ -149,76 +110,54 @@ def main() -> None:
     if not args.video.exists():
         raise FileNotFoundError(f"No se encontró el video: {args.video}")
 
-    output_dir = _ensure_output_dir(args.output_dir, args.video)
+    tracker = ProgressTracker(
+        [
+            ("inference", 0.45),
+            ("clustering", 0.2),
+            ("passes", 0.2),
+            ("shots", 0.1),
+            ("summary", 0.05),
+        ]
+    )
+    print("[  0.0%] Pipeline inicializado.")
+
+    output_root = args.output_dir
 
     # 1. Inferencia
-    inference = VideoInference(str(args.model))
-    detections = inference.process(str(args.video), threshold=args.threshold)
-
-    raw_path = output_dir / "detecciones_raw.csv"
-    detections_to_save = detections.copy()
-    detections_to_save["BBox"] = detections_to_save["BBox"].apply(_format_bbox_list)
-    detections_to_save.to_csv(raw_path, index=False)
-
-    # 2. Clustering de equipos
-    cluster = Cluster(random_state=args.cluster_random_state)
-    assignments = cluster.cluster_players(detections[["Frame", "ClassName", "BBox"]], str(args.video))
-    mapping = _map_cluster_labels(assignments, args.team_labels)
-
-    assignments["Team"] = assignments["Team"].map(mapping)
-    team_lookup: Dict[Tuple[int, str], str] = {
-        (int(row.Frame), json.dumps([float(v) for v in row.BBox])): str(row.Team)
-        for row in assignments.itertuples(index=False)
-    }
-
-    def _assign_team(row: pd.Series) -> Optional[str]:
-        key = json.dumps([float(v) for v in row["BBox"]])
-        return team_lookup.get((int(row["Frame"]), key))
-
-    detections["Team"] = detections.apply(_assign_team, axis=1)
-
-    detections_with_team = detections.copy()
-    detections_with_team["BBox"] = detections_with_team["BBox"].apply(_format_bbox_list)
-    detections_with_team.to_csv(output_dir / "detecciones_con_equipos.csv", index=False)
-
-    # 3. Análisis de pases
-    pass_analyzer = PassAnalyzer(
-        distance_threshold=args.pass_distance_threshold,
-        min_possession_frames=args.pass_min_possession,
-        max_gap_frames=args.pass_max_gap,
-        ball_max_interp_gap=args.ball_max_interp,
+    detections_csv = run_inference_stage(
+        args.video,
+        args.model,
+        threshold=args.threshold,
+        output_root=output_root,
     )
-    pass_result = pass_analyzer.analyze(detections)
+    tracker.advance("inference", f"Inferencia completada: {detections_csv}")
 
-    pass_result.passes.to_csv(output_dir / "pases_detectados.csv", index=False)
-    pass_result.possession.to_csv(output_dir / "posesion_estimada.csv", index=False)
-    pass_result.control_timeline.to_csv(output_dir / "control_timeline.csv", index=False)
-
-    # 4. Tiros (heurística simple)
-    shots = detect_shots(
-        detections,
-        ball_class="balon",
-        goal_class="arco",
-        player_class="jugador",
-        min_duration=args.shot_min_duration,
+    # 2. Clustering
+    clustering_paths = run_clustering_stage(
+        args.video,
+        detections_csv,
+        output_root=output_root,
+        team_labels=args.team_labels,
+        random_state=args.cluster_random_state,
     )
-    shots.to_csv(output_dir / "tiros_detectados.csv", index=False)
+    tracker.advance("clustering", f"Clustering completado: {clustering_paths['detecciones']}")
 
-    # 5. Resumen
-    summary = _summarize_metrics(pass_result.passes, pass_result.possession, shots)
-    summary.to_csv(output_dir / "resumen_equipos.csv", index=False)
+    # 3. Estadísticas (pases, posesión, tiros y resumen)
+    stats_paths = run_stats_stage(
+        args.video,
+        clustering_paths["detecciones"],
+        output_root=output_root,
+        pass_distance_threshold=args.pass_distance_threshold,
+        pass_min_possession=args.pass_min_possession,
+        pass_max_gap=args.pass_max_gap,
+        ball_max_interp=args.ball_max_interp,
+        shot_min_duration=args.shot_min_duration,
+    )
+    tracker.advance("passes", f"Pases/posesión generados: {stats_paths['passes']}")
+    tracker.advance("shots", f"Tiros detectados: {stats_paths['shots']}")
+    tracker.advance("summary", f"Resumen final guardado en: {stats_paths['summary']}")
 
-    report = {
-        "video": str(args.video),
-        "model": str(args.model),
-        "frames": int(pass_result.control_timeline["Frame"].max() + 1)
-        if not pass_result.control_timeline.empty
-        else 0,
-        "teams": summary["Team"].tolist(),
-    }
-    (output_dir / "metadata.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    print(f"Pipeline completado. Resultados en: {output_dir}")
+    print(f"Pipeline completado. Resultados en: {stats_paths['summary'].parent}")
 
 
 if __name__ == "__main__":
